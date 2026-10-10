@@ -172,6 +172,13 @@ pub async fn preview_handler(
             AppError::Internal
         })?;
 
+    let metadata = f.metadata().await.map_err(|e| {
+        tracing::error!(%e, operation = "get_file_metadata", "filesystem operation failed");
+        AppError::Internal
+    })?;
+
+    let size = metadata.size();
+
     let stream = ReaderStream::new(f);
     let body = Body::from_stream(stream);
 
@@ -182,7 +189,14 @@ pub async fn preview_handler(
 
     tracing::info!(content_type = %mime, "file stream response prepared");
 
-    let response = (StatusCode::OK, [(header::CONTENT_TYPE, mime)], body);
+    let response = (
+        StatusCode::OK,
+        [
+            (header::CONTENT_TYPE, mime),
+            (header::CONTENT_LENGTH, size.to_string()),
+        ],
+        body,
+    );
 
     Ok(response)
 }
