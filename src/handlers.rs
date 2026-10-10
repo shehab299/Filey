@@ -3,15 +3,19 @@ use axum::{
     Json,
     body::Body,
     extract::{Query, State},
-    http::{HeaderValue, StatusCode, header},
+    http::{HeaderMap, HeaderValue, StatusCode, header},
     response::{IntoResponse, Response},
 };
 use serde::{Deserialize, Serialize};
 use std::{
+    io::SeekFrom,
     os::unix::fs::MetadataExt,
     path::{Path, PathBuf},
 };
-use tokio::fs::{self, OpenOptions};
+use tokio::{
+    fs::{self, OpenOptions},
+    io::{AsyncReadExt, AsyncSeekExt},
+};
 use tokio_util::io::ReaderStream;
 
 #[tracing::instrument(level = "debug", skip_all)]
@@ -118,6 +122,7 @@ pub struct DownloadQuery {
 pub async fn download_handler(
     State(state): State<AppState>,
     Query(body): Query<DownloadQuery>,
+    req_headers: HeaderMap,
 ) -> Result<Response, AppError> {
     let filename = Path::new(&body.path)
         .file_name()
@@ -126,7 +131,7 @@ pub async fn download_handler(
 
     let rbody = DownloadRequest { path: body.path };
 
-    let mut response = preview_handler(State(state), Json(rbody))
+    let mut response = preview_handler(State(state), req_headers, Json(rbody))
         .await?
         .into_response();
 
@@ -148,10 +153,36 @@ pub struct DownloadRequest {
     path: String,
 }
 
+fn parse_range(range: &str) -> Result<(u64, Option<u64>), ()> {
+    let (unit, rng) = range.split_once("=").ok_or(())?;
+
+    if !unit.eq_ignore_ascii_case("bytes") {
+        return Err(());
+    }
+
+    let (start, end) = rng.split_once("-").ok_or(())?;
+
+    if start.is_empty() {
+        return Err(());
+    }
+
+    let start = start.trim().parse::<u64>().map_err(|_| ())?;
+
+    if end.is_empty() {
+        return Ok((start, None));
+    }
+
+    let end = end.trim().parse::<u64>().map_err(|_| ())?;
+
+    return Ok((start, Some(end)));
+}
+
 // POST remains available for fetching preview bytes without an attachment header.
 #[tracing::instrument(skip_all)]
+#[axum_macros::debug_handler]
 pub async fn preview_handler(
     State(state): State<AppState>,
+    req_headers: HeaderMap,
     Json(body): Json<DownloadRequest>,
 ) -> Result<impl IntoResponse, AppError> {
     let path = validate_path(&state.root, &body.path).await?;
@@ -163,7 +194,7 @@ pub async fn preview_handler(
         ));
     }
 
-    let f = OpenOptions::new()
+    let mut f = OpenOptions::new()
         .read(true)
         .open(&path)
         .await
@@ -179,7 +210,44 @@ pub async fn preview_handler(
 
     let size = metadata.size();
 
-    let stream = ReaderStream::new(f);
+    let mut start = 0;
+    let mut end = size - 1;
+
+    if let Some(range) = req_headers.get(header::RANGE) {
+        let range_str = range.to_str().map_err(|_| {
+            tracing::warn!(reason = "range header invalid");
+            AppError::BadRequest("Range header is not valid text".to_string())
+        })?;
+
+        let (start_parsed, end_parsed) = parse_range(range_str).map_err(|_| {
+            tracing::warn!(reason = "range header invalid");
+            AppError::BadRequest("Range header is not valid text".to_string())
+        })?;
+
+        if start_parsed >= size {
+            return Err(AppError::InvalidByteRange(size));
+        }
+
+        start = start_parsed;
+
+        end = match end_parsed {
+            Some(value) => value,
+            None => end,
+        };
+
+        if end < start {
+            return Err(AppError::InvalidByteRange(size));
+        }
+    }
+
+    end = end.min(size - 1);
+    let length = end - start + 1;
+
+    f.seek(SeekFrom::Start(start))
+        .await
+        .map_err(|_| AppError::Internal)?;
+
+    let stream = ReaderStream::new(f.take(end - start + 1));
     let body = Body::from_stream(stream);
 
     let mime = path
@@ -193,7 +261,12 @@ pub async fn preview_handler(
         StatusCode::OK,
         [
             (header::CONTENT_TYPE, mime),
-            (header::CONTENT_LENGTH, size.to_string()),
+            (header::CONTENT_LENGTH, length.to_string()),
+            (
+                header::CONTENT_RANGE,
+                format!("bytes {start}-{end}/{length}"),
+            ),
+            (header::ACCEPT_RANGES, "bytes".to_string()),
         ],
         body,
     );
