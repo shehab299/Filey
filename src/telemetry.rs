@@ -30,7 +30,7 @@ pub async fn log_request(request: Request, next: Next) -> Response {
         tracing::info!(
             status = response.status().as_u16(),
             elapsed_ms = started.elapsed().as_secs_f64() * 1000.0,
-            "request handled"
+            "request prepared"
         );
     }
 

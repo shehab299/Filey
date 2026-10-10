@@ -94,7 +94,6 @@ fn extract_mimetype(extension: String) -> String {
     .to_string()
 }
 
-// A safe ASCII fallback plus RFC 5987 encoding preserves Unicode filenames.
 fn attachment_header(filename: &str) -> String {
     let fallback: String = filename
         .chars()
@@ -153,33 +152,51 @@ pub struct DownloadRequest {
     path: String,
 }
 
-fn parse_range(range: &str) -> Result<(u64, Option<u64>), ()> {
-    let (unit, rng) = range.split_once("=").ok_or(())?;
+fn parse_range_header(range: &str, file_size: u64) -> Result<(u64, u64), AppError> {
+    let (unit, rng) = range
+        .split_once("=")
+        .ok_or(AppError::InvalidByteRange(file_size))?;
 
     if !unit.eq_ignore_ascii_case("bytes") {
-        return Err(());
+        return Err(AppError::InvalidByteRange(file_size));
     }
 
-    let (start, end) = rng.split_once("-").ok_or(())?;
+    let (start, end) = rng
+        .split_once("-")
+        .ok_or(AppError::InvalidByteRange(file_size))?;
 
     if start.is_empty() {
-        return Err(());
+        return Err(AppError::InvalidByteRange(file_size));
     }
 
-    let start = start.trim().parse::<u64>().map_err(|_| ())?;
+    let start = start
+        .trim()
+        .parse::<u64>()
+        .map_err(|_| AppError::InvalidByteRange(file_size))?;
+
+    if start >= file_size {
+        return Err(AppError::InvalidByteRange(file_size));
+    }
 
     if end.is_empty() {
-        return Ok((start, None));
+        return Ok((start, file_size - 1));
     }
 
-    let end = end.trim().parse::<u64>().map_err(|_| ())?;
+    let end = end
+        .trim()
+        .parse::<u64>()
+        .map_err(|_| AppError::InvalidByteRange(file_size))?;
 
-    return Ok((start, Some(end)));
+    if end < start {
+        return Err(AppError::InvalidByteRange(file_size));
+    }
+
+    let end = end.min(file_size - 1);
+
+    Ok((start, end))
 }
 
-// POST remains available for fetching preview bytes without an attachment header.
 #[tracing::instrument(skip_all)]
-#[axum_macros::debug_handler]
 pub async fn preview_handler(
     State(state): State<AppState>,
     req_headers: HeaderMap,
@@ -216,36 +233,18 @@ pub async fn preview_handler(
     if let Some(range) = req_headers.get(header::RANGE) {
         let range_str = range.to_str().map_err(|_| {
             tracing::warn!(reason = "range header invalid");
-            AppError::BadRequest("Range header is not valid text".to_string())
+            AppError::InvalidByteRange(size)
         })?;
 
-        let (start_parsed, end_parsed) = parse_range(range_str).map_err(|_| {
-            tracing::warn!(reason = "range header invalid");
-            AppError::BadRequest("Range header is not valid text".to_string())
-        })?;
-
-        if start_parsed >= size {
-            return Err(AppError::InvalidByteRange(size));
-        }
-
-        start = start_parsed;
-
-        end = match end_parsed {
-            Some(value) => value,
-            None => end,
-        };
-
-        if end < start {
-            return Err(AppError::InvalidByteRange(size));
-        }
+        (start, end) = parse_range_header(range_str, size)?;
     }
 
-    end = end.min(size - 1);
     let length = end - start + 1;
 
-    f.seek(SeekFrom::Start(start))
-        .await
-        .map_err(|_| AppError::Internal)?;
+    f.seek(SeekFrom::Start(start)).await.map_err(|error| {
+        tracing::error!(%error, operation = "open_file", "filesystem operation failed");
+        AppError::Internal
+    })?;
 
     let stream = ReaderStream::new(f.take(end - start + 1));
     let body = Body::from_stream(stream);
