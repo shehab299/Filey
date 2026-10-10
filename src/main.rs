@@ -3,9 +3,10 @@ mod error;
 mod handlers;
 mod state;
 mod telemetry;
+mod utils;
 
 use axum::{Router, middleware, routing::get};
-use handlers::*;
+use handlers::{download::*, files::*, root_handler};
 use state::AppState;
 use std::error::Error;
 
