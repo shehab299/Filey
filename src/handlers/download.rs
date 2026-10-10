@@ -175,6 +175,7 @@ pub async fn preview_handler(
 
     let mut start = 0;
     let mut end = size - 1;
+    let is_partial = true;
 
     if let Some(range) = req_headers.get(header::RANGE) {
         let range_str = range.to_str().map_err(|_| {
@@ -202,8 +203,13 @@ pub async fn preview_handler(
 
     tracing::info!(content_type = %mime, "file stream response prepared");
 
+    let status_code = match is_partial {
+        true => StatusCode::PARTIAL_CONTENT,
+        false => StatusCode::OK,
+    };
+
     let response = (
-        StatusCode::OK,
+        status_code,
         [
             (header::CONTENT_TYPE, mime),
             (header::CONTENT_LENGTH, length.to_string()),
