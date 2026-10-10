@@ -1,43 +1,51 @@
 use crate::{error::AppError, state::AppState};
 use axum::{
     Json,
+    body::Body,
     extract::{Query, State},
     http::{HeaderValue, StatusCode, header},
     response::{IntoResponse, Response},
 };
 use serde::{Deserialize, Serialize};
 use std::{
-    fs::OpenOptions,
-    io::Read,
     os::unix::fs::MetadataExt,
     path::{Path, PathBuf},
 };
-use tokio::fs;
+use tokio::fs::{self, OpenOptions};
+use tokio_util::io::ReaderStream;
 
+#[tracing::instrument(level = "debug", skip_all)]
 async fn validate_path(root: &PathBuf, path: &str) -> Result<PathBuf, AppError> {
     let requested = Path::new(&path);
 
     if requested.is_absolute() {
+        tracing::warn!(reason = "absolute_path", "path validation rejected");
         return Err(AppError::BadRequest(
             "Absolute paths are not allowed".to_string(),
         ));
     }
 
-    let root = fs::canonicalize(root)
-        .await
-        .map_err(|_| AppError::Internal)?;
+    let root = fs::canonicalize(root).await.map_err(|error| {
+        tracing::error!(%error, operation = "canonicalize_root", "filesystem operation failed");
+        AppError::Internal
+    })?;
 
     let path = root.join(path);
 
     if !path.exists() {
+        tracing::warn!(reason = "path_missing", "path validation rejected");
         return Err(AppError::BadRequest("Path doesn't exist".to_string()));
     }
 
     let candidate = fs::canonicalize(root.join(path))
         .await
-        .map_err(|_| AppError::Internal)?;
+        .map_err(|error| {
+            tracing::error!(%error, operation = "canonicalize_requested_path", "filesystem operation failed");
+            AppError::Internal
+        })?;
 
     if !candidate.starts_with(&root) {
+        tracing::warn!(reason = "outside_root", "path validation rejected");
         return Err(AppError::BadRequest("Path doesn't exist".to_string()));
     }
 
@@ -48,6 +56,7 @@ async fn validate_path(root: &PathBuf, path: &str) -> Result<PathBuf, AppError> 
 // Root Handler
 // ######################
 
+#[tracing::instrument(skip_all)]
 pub async fn root_handler() -> Result<impl IntoResponse, AppError> {
     Ok((StatusCode::OK, Json("Hello! I am alive".to_string())))
 }
@@ -81,7 +90,6 @@ fn extract_mimetype(extension: String) -> String {
     .to_string()
 }
 
-
 // A safe ASCII fallback plus RFC 5987 encoding preserves Unicode filenames.
 fn attachment_header(filename: &str) -> String {
     let fallback: String = filename
@@ -106,28 +114,31 @@ pub struct DownloadQuery {
     path: String,
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn download_handler(
     State(state): State<AppState>,
     Query(body): Query<DownloadQuery>,
 ) -> Result<Response, AppError> {
-
     let filename = Path::new(&body.path)
         .file_name()
         .map(|name| name.to_string_lossy().into_owned())
         .unwrap_or_else(|| "download".to_string());
 
-    let rbody = DownloadRequest {
-        path: body.path
-    };
-    
+    let rbody = DownloadRequest { path: body.path };
+
     let mut response = preview_handler(State(state), Json(rbody))
         .await?
         .into_response();
-    
+
     response.headers_mut().insert(
         header::CONTENT_DISPOSITION,
-        HeaderValue::from_str(&attachment_header(&filename)).map_err(|_| AppError::Internal)?,
+        HeaderValue::from_str(&attachment_header(&filename)).map_err(|error| {
+            tracing::error!(%error, "failed to build attachment header");
+            AppError::Internal
+        })?,
     );
+
+    tracing::info!("download response prepared");
 
     Ok(response)
 }
@@ -138,39 +149,43 @@ pub struct DownloadRequest {
 }
 
 // POST remains available for fetching preview bytes without an attachment header.
+#[tracing::instrument(skip_all)]
 pub async fn preview_handler(
     State(state): State<AppState>,
     Json(body): Json<DownloadRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    
     let path = validate_path(&state.root, &body.path).await?;
 
     if !path.is_file() {
+        tracing::warn!(reason = "not_a_file", "file request rejected");
         return Err(AppError::BadRequest(
             "Provided path isn't a valid file".to_string(),
         ));
     }
 
-    let mut f = OpenOptions::new()
+    let f = OpenOptions::new()
         .read(true)
         .open(&path)
-        .map_err(|_| AppError::Internal)?;
+        .await
+        .map_err(|error| {
+            tracing::error!(%error, operation = "open_file", "filesystem operation failed");
+            AppError::Internal
+        })?;
 
-    let mut file_bytes: Vec<u8> = vec![];
-
-    f.read_to_end(&mut file_bytes)
-        .map_err(|_| AppError::Internal)?;
+    let stream = ReaderStream::new(f);
+    let body = Body::from_stream(stream);
 
     let mime = path
         .extension()
         .map(|s| extract_mimetype(s.to_string_lossy().to_string()))
         .unwrap_or("application/octet-stream".to_string());
 
-    let response = (StatusCode::OK, [(header::CONTENT_TYPE, mime)], file_bytes);
+    tracing::info!(content_type = %mime, "file stream response prepared");
+
+    let response = (StatusCode::OK, [(header::CONTENT_TYPE, mime)], body);
 
     Ok(response)
 }
-
 
 // ######################
 // Files Handler
@@ -200,6 +215,7 @@ pub struct FilesParams {
     path: Option<String>,
 }
 
+#[tracing::instrument(skip_all)]
 pub async fn files_handler(
     State(state): State<AppState>,
     Query(params): Query<FilesParams>,
@@ -210,18 +226,26 @@ pub async fn files_handler(
     };
 
     if !path.is_dir() {
+        tracing::warn!(reason = "not_a_directory", "directory request rejected");
         return Err(AppError::BadRequest(
             "Provided path isn't a valid folder".to_string(),
         ));
     }
 
-    let dir = std::fs::read_dir(path).map_err(|_| AppError::Internal)?;
+    let dir = std::fs::read_dir(path).map_err(|error| {
+        tracing::error!(%error, operation = "read_directory", "filesystem operation failed");
+        AppError::Internal
+    })?;
 
     let mut entries: Vec<Entry> = vec![];
+    let mut skipped_entries = 0usize;
 
     for entry in dir {
         if let Ok(e) = entry {
-            let metadata = e.metadata().map_err(|_| AppError::Internal)?;
+            let metadata = e.metadata().map_err(|error| {
+                tracing::error!(%error, operation = "read_entry_metadata", "filesystem operation failed");
+                AppError::Internal
+            })?;
 
             let name = e.file_name().to_string_lossy().to_string();
             let r#type = match metadata.is_dir() {
@@ -234,7 +258,10 @@ pub async fn files_handler(
             let path = e
                 .path()
                 .strip_prefix(&state.root)
-                .map_err(|_| AppError::Internal)?
+                .map_err(|error| {
+                    tracing::error!(%error, "directory entry is outside configured root");
+                    AppError::Internal
+                })?
                 .to_string_lossy()
                 .into_owned();
 
@@ -244,8 +271,17 @@ pub async fn files_handler(
                 size,
                 path,
             });
+        } else if let Err(error) = entry {
+            skipped_entries += 1;
+            tracing::warn!(%error, operation = "read_directory_entry", "directory entry skipped");
         }
     }
+
+    tracing::info!(
+        entry_count = entries.len(),
+        skipped_entries,
+        "directory listing prepared"
+    );
 
     let response = FilesResponse { entries };
 
