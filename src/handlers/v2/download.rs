@@ -1,13 +1,12 @@
-use crate::utils::{handle_if_modified_since, validate_path};
+use crate::utils::{handle_if_modified_since, parse_range_header, validate_path};
 use crate::{error::AppError, state::AppState};
 use axum::{
-    Json,
     body::Body,
     extract::{Query, State},
     http::{HeaderMap, HeaderValue, StatusCode, header},
     response::{IntoResponse, Response},
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::{io::SeekFrom, os::unix::fs::MetadataExt, path::Path};
 use tokio::{
     fs::OpenOptions,
@@ -58,97 +57,28 @@ fn attachment_header(filename: &str) -> String {
     format!("attachment; filename=\"{fallback}\"; filename*=UTF-8''{encoded}")
 }
 
+
+#[derive(Serialize, Deserialize, PartialEq, Eq)]
+pub enum Mode {
+    #[serde(rename = "d")]
+    Download,
+    #[serde(rename = "p")]
+    Preview,
+}
+
 #[derive(Deserialize)]
 pub struct DownloadQuery {
     path: String,
+    mode: Option<Mode>,
 }
 
 #[tracing::instrument(skip_all)]
 pub async fn download_handler(
     State(state): State<AppState>,
-    Query(body): Query<DownloadQuery>,
-    req_headers: HeaderMap,
+    Query(query): Query<DownloadQuery>,
+    headers: HeaderMap,
 ) -> Result<Response, AppError> {
-    let filename = Path::new(&body.path)
-        .file_name()
-        .map(|name| name.to_string_lossy().into_owned())
-        .unwrap_or_else(|| "download".to_string());
-
-    let rbody = DownloadRequest { path: body.path };
-
-    let mut response = preview_handler(State(state), req_headers, Json(rbody))
-        .await?
-        .into_response();
-
-    response.headers_mut().insert(
-        header::CONTENT_DISPOSITION,
-        HeaderValue::from_str(&attachment_header(&filename)).map_err(|error| {
-            tracing::error!(%error, "failed to build attachment header");
-            AppError::Internal
-        })?,
-    );
-
-    tracing::info!("download response prepared");
-
-    Ok(response)
-}
-
-#[derive(Deserialize)]
-pub struct DownloadRequest {
-    path: String,
-}
-
-fn parse_range_header(range: &str, file_size: u64) -> Result<(u64, u64), AppError> {
-    let (unit, rng) = range
-        .split_once("=")
-        .ok_or(AppError::InvalidByteRange(file_size))?;
-
-    if !unit.eq_ignore_ascii_case("bytes") {
-        return Err(AppError::InvalidByteRange(file_size));
-    }
-
-    let (start, end) = rng
-        .split_once("-")
-        .ok_or(AppError::InvalidByteRange(file_size))?;
-
-    if start.is_empty() {
-        return Err(AppError::InvalidByteRange(file_size));
-    }
-
-    let start = start
-        .trim()
-        .parse::<u64>()
-        .map_err(|_| AppError::InvalidByteRange(file_size))?;
-
-    if start >= file_size {
-        return Err(AppError::InvalidByteRange(file_size));
-    }
-
-    if end.is_empty() {
-        return Ok((start, file_size - 1));
-    }
-
-    let end = end
-        .trim()
-        .parse::<u64>()
-        .map_err(|_| AppError::InvalidByteRange(file_size))?;
-
-    if end < start {
-        return Err(AppError::InvalidByteRange(file_size));
-    }
-
-    let end = end.min(file_size - 1);
-
-    Ok((start, end))
-}
-
-#[tracing::instrument(skip_all)]
-pub async fn preview_handler(
-    State(state): State<AppState>,
-    req_headers: HeaderMap,
-    Json(body): Json<DownloadRequest>,
-) -> Result<impl IntoResponse, AppError> {
-    let path = validate_path(&state.root, &body.path).await?;
+    let path = validate_path(&state.root, &query.path).await?;
 
     if !path.is_file() {
         tracing::warn!(reason = "not_a_file", "file request rejected");
@@ -176,24 +106,19 @@ pub async fn preview_handler(
         AppError::Internal
     })?;
 
-    if let Some(response) = handle_if_modified_since(&req_headers, last_modified) {
+    if let Some(response) = handle_if_modified_since(&headers, last_modified) {
         return Ok(response);
     }
-
 
     let size = metadata.size();
 
     let mut start = 0;
     let mut end = size - 1;
-    let is_partial = true;
+    let mut is_partial = false;
 
-    if let Some(range) = req_headers.get(header::RANGE) {
-        let range_str = range.to_str().map_err(|_| {
-            tracing::warn!(reason = "range header invalid");
-            AppError::InvalidByteRange(size)
-        })?;
-
-        (start, end) = parse_range_header(range_str, size)?;
+    if let Some(range) = headers.get(header::RANGE) {
+        (start, end) = parse_range_header(&range, size)?;
+        is_partial = true;
     }
 
     let length = end - start + 1;
@@ -218,7 +143,7 @@ pub async fn preview_handler(
         false => StatusCode::OK,
     };
 
-    let response = (
+    let mut response = (
         status_code,
         [
             (header::CONTENT_TYPE, mime),
@@ -228,11 +153,32 @@ pub async fn preview_handler(
                 format!("bytes {start}-{end}/{length}"),
             ),
             (header::ACCEPT_RANGES, "bytes".to_string()),
-            (header::LAST_MODIFIED, httpdate::fmt_http_date(last_modified)),
+            (
+                header::LAST_MODIFIED,
+                httpdate::fmt_http_date(last_modified),
+            ),
         ],
         body,
-    ).into_response();
+    )
+        .into_response();
 
+    if let Some(mode) = query.mode {
+        if mode == Mode::Download {
+            let filename = Path::new(&query.path)
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_else(|| "download".to_string());
+
+            response.headers_mut().insert(
+                header::CONTENT_DISPOSITION,
+                HeaderValue::from_str(&attachment_header(&filename)).map_err(|error| {
+                    tracing::error!(%error, "failed to build attachment header");
+                    AppError::Internal
+                })?,
+            );
+        }
+    }
+
+    tracing::info!("download response prepared");
     Ok(response)
 }
-

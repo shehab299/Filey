@@ -1,5 +1,5 @@
-pub mod download;
-pub mod files;
+pub mod v1;
+pub mod v2;
 
 use crate::error::AppError;
 use axum::{Json, http::StatusCode, response::IntoResponse};

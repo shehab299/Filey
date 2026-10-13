@@ -1,6 +1,12 @@
 use crate::error::AppError;
-use std::{path::{Path, PathBuf}, time::SystemTime};
-use axum::{http::{HeaderMap, StatusCode, header}, response::{IntoResponse, Response}};
+use axum::{
+    http::{HeaderMap, HeaderValue, StatusCode, header},
+    response::{IntoResponse, Response},
+};
+use std::{
+    path::{Path, PathBuf},
+    time::SystemTime,
+};
 use tokio::fs;
 
 #[tracing::instrument(level = "debug", skip_all)]
@@ -44,28 +50,77 @@ pub async fn validate_path(root: &PathBuf, path: &str) -> Result<PathBuf, AppErr
 // HTTP UTILS
 
 pub fn handle_if_modified_since(
-    headers: &HeaderMap, 
-    last_modified: SystemTime
+    headers: &HeaderMap,
+    last_modified: SystemTime,
 ) -> Option<Response> {
-
     let if_modified_since = headers
         .get(header::IF_MODIFIED_SINCE)
         .and_then(|value| value.to_str().ok())
         .and_then(|value| httpdate::parse_http_date(value).ok());
 
     if let Some(if_modified_since) = if_modified_since {
-
         if last_modified <= if_modified_since {
             let response = (
                 StatusCode::NOT_MODIFIED,
-                [
-                    (header::LAST_MODIFIED, httpdate::fmt_http_date(last_modified))
-                ]
-            ).into_response();
+                [(
+                    header::LAST_MODIFIED,
+                    httpdate::fmt_http_date(last_modified),
+                )],
+            )
+                .into_response();
 
-            return Some(response)
+            return Some(response);
         }
-    } 
-        
+    }
+
     None
+}
+
+pub fn parse_range_header(range: &HeaderValue, file_size: u64) -> Result<(u64, u64), AppError> {
+    let range = range.to_str().map_err(|_| {
+        tracing::warn!(reason = "range header invalid");
+        AppError::InvalidByteRange(file_size)
+    })?;
+
+    let (unit, rng) = range
+        .split_once("=")
+        .ok_or(AppError::InvalidByteRange(file_size))?;
+
+    if !unit.eq_ignore_ascii_case("bytes") {
+        return Err(AppError::InvalidByteRange(file_size));
+    }
+
+    let (start, end) = rng
+        .split_once("-")
+        .ok_or(AppError::InvalidByteRange(file_size))?;
+
+    if start.is_empty() {
+        return Err(AppError::InvalidByteRange(file_size));
+    }
+
+    let start = start
+        .trim()
+        .parse::<u64>()
+        .map_err(|_| AppError::InvalidByteRange(file_size))?;
+
+    if start >= file_size {
+        return Err(AppError::InvalidByteRange(file_size));
+    }
+
+    if end.is_empty() {
+        return Ok((start, file_size - 1));
+    }
+
+    let end = end
+        .trim()
+        .parse::<u64>()
+        .map_err(|_| AppError::InvalidByteRange(file_size))?;
+
+    if end < start {
+        return Err(AppError::InvalidByteRange(file_size));
+    }
+
+    let end = end.min(file_size - 1);
+
+    Ok((start, end))
 }
