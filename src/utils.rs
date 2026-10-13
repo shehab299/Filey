@@ -1,5 +1,6 @@
 use crate::error::AppError;
-use std::path::{Path, PathBuf};
+use std::{path::{Path, PathBuf}, time::SystemTime};
+use axum::{http::{HeaderMap, StatusCode, header}, response::{IntoResponse, Response}};
 use tokio::fs;
 
 #[tracing::instrument(level = "debug", skip_all)]
@@ -38,4 +39,33 @@ pub async fn validate_path(root: &PathBuf, path: &str) -> Result<PathBuf, AppErr
     }
 
     Ok(candidate)
+}
+
+// HTTP UTILS
+
+pub fn handle_if_modified_since(
+    headers: &HeaderMap, 
+    last_modified: SystemTime
+) -> Option<Response> {
+
+    let if_modified_since = headers
+        .get(header::IF_MODIFIED_SINCE)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| httpdate::parse_http_date(value).ok());
+
+    if let Some(if_modified_since) = if_modified_since {
+
+        if last_modified <= if_modified_since {
+            let response = (
+                StatusCode::NOT_MODIFIED,
+                [
+                    (header::LAST_MODIFIED, httpdate::fmt_http_date(last_modified))
+                ]
+            ).into_response();
+
+            return Some(response)
+        }
+    } 
+        
+    None
 }

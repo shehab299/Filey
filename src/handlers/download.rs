@@ -1,4 +1,4 @@
-use crate::utils::validate_path;
+use crate::utils::{handle_if_modified_since, validate_path};
 use crate::{error::AppError, state::AppState};
 use axum::{
     Json,
@@ -171,6 +171,16 @@ pub async fn preview_handler(
         AppError::Internal
     })?;
 
+    let last_modified = metadata.modified().map_err(|e| {
+        tracing::error!(%e, operation = "get_file_metadata", "filesystem operation failed");
+        AppError::Internal
+    })?;
+
+    if let Some(response) = handle_if_modified_since(&req_headers, last_modified) {
+        return Ok(response);
+    }
+
+
     let size = metadata.size();
 
     let mut start = 0;
@@ -218,9 +228,11 @@ pub async fn preview_handler(
                 format!("bytes {start}-{end}/{length}"),
             ),
             (header::ACCEPT_RANGES, "bytes".to_string()),
+            (header::LAST_MODIFIED, httpdate::fmt_http_date(last_modified)),
         ],
         body,
-    );
+    ).into_response();
 
     Ok(response)
 }
+
