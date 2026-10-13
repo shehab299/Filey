@@ -22,8 +22,10 @@ async fn main() -> Result<(), Box<dyn Error>> {
         root: config::root()?,
     };
 
-    let api_v2_router =
-        Router::new().route("/api/v2/download", get(v2::download::download_handler));
+    let api_v2_router = Router::new().route(
+        "/api/v2/download",
+        get(v2::download::download_handler).head(v2::download::download_metadata_handler),
+    );
 
     let api_v1_router = Router::new()
         .route(

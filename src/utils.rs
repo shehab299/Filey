@@ -58,19 +58,19 @@ pub fn handle_if_modified_since(
         .and_then(|value| value.to_str().ok())
         .and_then(|value| httpdate::parse_http_date(value).ok());
 
-    if let Some(if_modified_since) = if_modified_since {
-        if last_modified <= if_modified_since {
-            let response = (
-                StatusCode::NOT_MODIFIED,
-                [(
-                    header::LAST_MODIFIED,
-                    httpdate::fmt_http_date(last_modified),
-                )],
-            )
-                .into_response();
+    if let Some(if_modified_since) = if_modified_since
+        && last_modified <= if_modified_since
+    {
+        let response = (
+            StatusCode::NOT_MODIFIED,
+            [(
+                header::LAST_MODIFIED,
+                httpdate::fmt_http_date(last_modified),
+            )],
+        )
+            .into_response();
 
-            return Some(response);
-        }
+        return Some(response);
     }
 
     None
