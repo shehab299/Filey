@@ -1,4 +1,7 @@
-use crate::utils::{handle_if_modified_since, parse_range_header, validate_path};
+use crate::utils::{
+    ContentDisposition, content_disposition, handle_if_modified_since, parse_range_header,
+    validate_path,
+};
 use crate::{error::AppError, state::AppState};
 use axum::{
     body::Body,
@@ -32,32 +35,17 @@ fn extract_mimetype(extension: String) -> String {
         "svg" => "image/svg+xml",
         "mp3" => "audio/mpeg",
         "wav" => "audio/wav",
+        "ogg" => "audio/ogg",
+        "flac" => "audio/flac",
         "mp4" => "video/mp4",
         "webm" => "video/webm",
-        "m4v" => "video/x-m4v",
+        "m4v" => "video/mp4",
+        "mov" => "video/quicktime",
         "zip" => "application/zip",
         "gz" => "application/gzip",
         _ => "application/octet-stream",
     }
     .to_string()
-}
-
-fn attachment_header(filename: &str) -> String {
-    let fallback: String = filename
-        .chars()
-        .map(|character| {
-            if character.is_ascii_alphanumeric() || " .-_".contains(character) {
-                character
-            } else {
-                '_'
-            }
-        })
-        .collect();
-    let encoded: String = filename
-        .bytes()
-        .map(|byte| format!("%{byte:02X}"))
-        .collect();
-    format!("attachment; filename=\"{fallback}\"; filename*=UTF-8''{encoded}")
 }
 
 struct PreparedFile {
@@ -100,7 +88,7 @@ async fn prepare_file(path: PathBuf, headers: &HeaderMap) -> Result<PreparedFile
     let size = metadata.size();
 
     let mut start = 0;
-    let mut end = size - 1;
+    let mut end = size.saturating_sub(1);
     let mut is_partial = false;
 
     if let Some(range) = headers.get(header::RANGE) {
@@ -124,7 +112,7 @@ async fn prepare_file(path: PathBuf, headers: &HeaderMap) -> Result<PreparedFile
     })
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Clone)]
 pub enum Mode {
     #[serde(rename = "d")]
     Download,
@@ -132,7 +120,7 @@ pub enum Mode {
     Preview,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 pub struct DownloadQuery {
     path: String,
     mode: Option<Mode>,
@@ -152,7 +140,7 @@ pub async fn download_handler(
         return Ok(response);
     }
 
-    let length = f.end - f.start + 1;
+    let length = if f.size == 0 { 0 } else { f.end - f.start + 1 };
 
     f.file
         .seek(SeekFrom::Start(f.start))
@@ -191,6 +179,10 @@ pub async fn download_handler(
     )
         .into_response();
 
+    if !f.is_partial {
+        response.headers_mut().remove(header::CONTENT_RANGE);
+    }
+
     if let Some(mode) = query.mode
         && mode == Mode::Download
     {
@@ -201,7 +193,11 @@ pub async fn download_handler(
 
         response.headers_mut().insert(
             header::CONTENT_DISPOSITION,
-            HeaderValue::from_str(&attachment_header(&filename)).map_err(|error| {
+            HeaderValue::from_str(&content_disposition(
+                &filename,
+                ContentDisposition::Attachment,
+            ))
+            .map_err(|error| {
                 tracing::error!(%error, "failed to build attachment header");
                 AppError::Internal
             })?,
@@ -231,11 +227,14 @@ pub async fn download_metadata_handler(
         false => StatusCode::OK,
     };
 
-    let response = (
+    let mut response = (
         status_code,
         [
             (header::CONTENT_TYPE, f.mime),
-            (header::CONTENT_LENGTH, (f.end - f.start + 1).to_string()),
+            (
+                header::CONTENT_LENGTH,
+                (if f.size == 0 { 0 } else { f.end - f.start + 1 }).to_string(),
+            ),
             (
                 header::CONTENT_RANGE,
                 format!("bytes {}-{}/{}", f.start, f.end, f.size),
@@ -248,6 +247,34 @@ pub async fn download_metadata_handler(
         ],
     )
         .into_response();
+
+    if !f.is_partial {
+        response.headers_mut().remove(header::CONTENT_RANGE);
+    }
+
+    Ok(response)
+}
+
+#[tracing::instrument(skip_all)]
+pub async fn media_handler(
+    State(state): State<AppState>,
+    Query(mut query): Query<DownloadQuery>,
+    headers: HeaderMap,
+) -> Result<Response, AppError> {
+    query.mode = Some(Mode::Preview);
+
+    let mut response = download_handler(State(state), Query(query.clone()), headers).await?;
+
+    let filename = Path::new(&query.path)
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "download".to_string());
+
+    response.headers_mut().insert(
+        header::CONTENT_DISPOSITION,
+        HeaderValue::from_str(&content_disposition(&filename, ContentDisposition::Inline))
+            .map_err(|_| AppError::Internal)?,
+    );
 
     Ok(response)
 }

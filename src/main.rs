@@ -9,7 +9,7 @@ use axum::{Router, middleware, routing::get};
 use state::AppState;
 use std::error::Error;
 
-use crate::handlers::*;
+use crate::handlers::{v2::download::media_handler, *};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -22,10 +22,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
         root: config::root()?,
     };
 
-    let api_v2_router = Router::new().route(
-        "/api/v2/download",
-        get(v2::download::download_handler).head(v2::download::download_metadata_handler),
-    );
+    let api_v2_router = Router::new()
+        .route(
+            "/api/v2/download",
+            get(v2::download::download_handler).head(v2::download::download_metadata_handler),
+        )
+        .route("/media", get(media_handler));
 
     let api_v1_router = Router::new()
         .route(

@@ -77,6 +77,9 @@ pub fn handle_if_modified_since(
 }
 
 pub fn parse_range_header(range: &HeaderValue, file_size: u64) -> Result<(u64, u64), AppError> {
+    if file_size == 0 {
+        return Err(AppError::InvalidByteRange(file_size));
+    }
     let range = range.to_str().map_err(|_| {
         tracing::warn!(reason = "range header invalid");
         AppError::InvalidByteRange(file_size)
@@ -95,7 +98,14 @@ pub fn parse_range_header(range: &HeaderValue, file_size: u64) -> Result<(u64, u
         .ok_or(AppError::InvalidByteRange(file_size))?;
 
     if start.is_empty() {
-        return Err(AppError::InvalidByteRange(file_size));
+        let suffix = end
+            .trim()
+            .parse::<u64>()
+            .map_err(|_| AppError::InvalidByteRange(file_size))?;
+        if suffix == 0 {
+            return Err(AppError::InvalidByteRange(file_size));
+        }
+        return Ok((file_size.saturating_sub(suffix), file_size - 1));
     }
 
     let start = start
@@ -124,3 +134,40 @@ pub fn parse_range_header(range: &HeaderValue, file_size: u64) -> Result<(u64, u
 
     Ok((start, end))
 }
+
+pub enum ContentDisposition {
+    Inline,
+    Attachment,
+    FormData,
+}
+
+impl std::fmt::Display for ContentDisposition {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ContentDisposition::Inline => write!(f, "inline"),
+            ContentDisposition::Attachment => write!(f, "attachment"),
+            ContentDisposition::FormData => write!(f, "form-data"),
+        }
+    }
+}
+
+pub fn content_disposition(filename: &str, disposition: ContentDisposition) -> String {
+    let fallback: String = filename
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() || " .-_".contains(character) {
+                character
+            } else {
+                '_'
+            }
+        })
+        .collect();
+
+    let encoded: String = filename
+        .bytes()
+        .map(|byte| format!("%{byte:02X}"))
+        .collect();
+
+    format!("{disposition}; filename=\"{fallback}\"; filename*=UTF-8''{encoded}")
+}
+
