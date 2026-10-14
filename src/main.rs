@@ -9,7 +9,8 @@ use axum::{Router, middleware, routing::get};
 use state::AppState;
 use std::error::Error;
 
-use crate::handlers::{v2::download::media_handler, *};
+use crate::handlers::download::*;
+use crate::handlers::files::*;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -22,24 +23,16 @@ async fn main() -> Result<(), Box<dyn Error>> {
         root: config::root()?,
     };
 
-    let api_v2_router = Router::new()
+    let api_router = Router::new()
         .route(
-            "/api/v2/download",
-            get(v2::download::download_handler).head(v2::download::download_metadata_handler),
+            "download",
+            get(download_handler).head(download_metadata_handler),
         )
-        .route("/media", get(media_handler));
-
-    let api_v1_router = Router::new()
-        .route(
-            "/download",
-            get(v1::download::download_handler).post(v1::download::preview_handler),
-        )
-        .route("/files", get(v1::files::files_handler));
+        .route("files", get(files_handler))
+        .route("media", get(media_handler));
 
     let router = Router::new()
-        .route("/health", get(root_handler))
-        .merge(api_v1_router)
-        .merge(api_v2_router)
+        .nest("/api/v2", api_router)
         .layer(middleware::from_fn(telemetry::log_request))
         .with_state(state);
 

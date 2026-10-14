@@ -170,4 +170,3 @@ pub fn content_disposition(filename: &str, disposition: ContentDisposition) -> S
 
     format!("{disposition}; filename=\"{fallback}\"; filename*=UTF-8''{encoded}")
 }
-
