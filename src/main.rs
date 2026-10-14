@@ -5,12 +5,21 @@ mod state;
 mod telemetry;
 mod utils;
 
-use axum::{Router, middleware, routing::get};
+use axum::{
+    Router,
+    extract::DefaultBodyLimit,
+    middleware,
+    routing::{delete, get, post},
+};
 use state::AppState;
 use std::error::Error;
 
-use crate::handlers::download::*;
-use crate::handlers::files::*;
+use crate::handlers::{directory::delete_dir, files::*};
+use crate::handlers::{
+    directory::{create_dir, list_directory},
+    download::*,
+};
+use crate::handlers::{file::delete_file, upload::*};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
@@ -24,12 +33,19 @@ async fn main() -> Result<(), Box<dyn Error>> {
     };
 
     let api_router = Router::new()
+        .route("/upload", post(upload_handler))
+        .layer(DefaultBodyLimit::max(1024 * 1024 * 1024))
         .route(
-            "download",
+            "/download",
             get(download_handler).head(download_metadata_handler),
         )
-        .route("files", get(files_handler))
-        .route("media", get(media_handler));
+        .route("/files", get(files_handler)) 
+        .route("/media", get(media_handler))
+        .route(
+            "/directory",
+            post(create_dir).delete(delete_dir).get(list_directory),
+        )
+        .route("/file", delete(delete_file));
 
     let router = Router::new()
         .nest("/api/v2", api_router)

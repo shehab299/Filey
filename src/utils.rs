@@ -192,6 +192,7 @@ pub fn extract_http_mimetype(extension: String) -> String {
         "webm" => "video/webm",
         "m4v" => "video/mp4",
         "mov" => "video/quicktime",
+        "mkv" => "video/x-matroska",
         "zip" => "application/zip",
         "gz" => "application/gzip",
         _ => "application/octet-stream",
