@@ -73,7 +73,7 @@ pub async fn delete_dir(
         .await
         .map_err(|_| AppError::Internal)?;
 
-    return Ok(StatusCode::NO_CONTENT.into_response());
+    Ok(StatusCode::NO_CONTENT.into_response())
 }
 
 #[derive(Serialize)]

@@ -1,4 +1,4 @@
-use axum::extract::{Query, State};
+use axum::extract::State;
 use axum::{
     Json,
     http::StatusCode,
@@ -28,5 +28,5 @@ pub async fn delete_file(
         .await
         .map_err(|_| AppError::Internal)?;
 
-    return Ok(StatusCode::NO_CONTENT.into_response());
+    Ok(StatusCode::NO_CONTENT.into_response())
 }

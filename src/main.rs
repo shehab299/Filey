@@ -14,9 +14,8 @@ use axum::{
 use state::AppState;
 use std::error::Error;
 
-use crate::handlers::{directory::delete_dir, files::*};
 use crate::handlers::{
-    directory::{create_dir, list_directory},
+    directory::{create_dir, delete_dir, list_directory},
     download::*,
 };
 use crate::handlers::{file::delete_file, upload::*};
@@ -39,7 +38,6 @@ async fn main() -> Result<(), Box<dyn Error>> {
             "/download",
             get(download_handler).head(download_metadata_handler),
         )
-        .route("/files", get(files_handler)) 
         .route("/media", get(media_handler))
         .route(
             "/directory",
