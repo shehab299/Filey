@@ -170,3 +170,31 @@ pub fn content_disposition(filename: &str, disposition: ContentDisposition) -> S
 
     format!("{disposition}; filename=\"{fallback}\"; filename*=UTF-8''{encoded}")
 }
+
+pub fn extract_http_mimetype(extension: String) -> String {
+    match extension.to_ascii_lowercase().as_str() {
+        "txt" => "text/plain",
+        "html" | "htm" => "text/html",
+        "css" => "text/css",
+        "js" => "text/javascript",
+        "json" => "application/json",
+        "pdf" => "application/pdf",
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "svg" => "image/svg+xml",
+        "mp3" => "audio/mpeg",
+        "wav" => "audio/wav",
+        "ogg" => "audio/ogg",
+        "flac" => "audio/flac",
+        "mp4" => "video/mp4",
+        "webm" => "video/webm",
+        "m4v" => "video/mp4",
+        "mov" => "video/quicktime",
+        "zip" => "application/zip",
+        "gz" => "application/gzip",
+        _ => "application/octet-stream",
+    }
+    .to_string()
+}

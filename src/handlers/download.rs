@@ -1,6 +1,6 @@
 use crate::utils::{
-    ContentDisposition, content_disposition, handle_if_modified_since, parse_range_header,
-    validate_path,
+    ContentDisposition, content_disposition, extract_http_mimetype, handle_if_modified_since,
+    parse_range_header, validate_path,
 };
 use crate::{error::AppError, state::AppState};
 use axum::{
@@ -19,34 +19,6 @@ use tokio::{
     io::{AsyncReadExt, AsyncSeekExt},
 };
 use tokio_util::io::ReaderStream;
-
-fn extract_mimetype(extension: String) -> String {
-    match extension.to_ascii_lowercase().as_str() {
-        "txt" => "text/plain",
-        "html" | "htm" => "text/html",
-        "css" => "text/css",
-        "js" => "text/javascript",
-        "json" => "application/json",
-        "pdf" => "application/pdf",
-        "png" => "image/png",
-        "jpg" | "jpeg" => "image/jpeg",
-        "gif" => "image/gif",
-        "webp" => "image/webp",
-        "svg" => "image/svg+xml",
-        "mp3" => "audio/mpeg",
-        "wav" => "audio/wav",
-        "ogg" => "audio/ogg",
-        "flac" => "audio/flac",
-        "mp4" => "video/mp4",
-        "webm" => "video/webm",
-        "m4v" => "video/mp4",
-        "mov" => "video/quicktime",
-        "zip" => "application/zip",
-        "gz" => "application/gzip",
-        _ => "application/octet-stream",
-    }
-    .to_string()
-}
 
 struct PreparedFile {
     file: File,
@@ -98,7 +70,7 @@ async fn prepare_file(path: PathBuf, headers: &HeaderMap) -> Result<PreparedFile
 
     let mime = path
         .extension()
-        .map(|s| extract_mimetype(s.to_string_lossy().to_string()))
+        .map(|s| extract_http_mimetype(s.to_string_lossy().to_string()))
         .unwrap_or("application/octet-stream".to_string());
 
     Ok(PreparedFile {
