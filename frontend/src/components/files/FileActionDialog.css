@@ -1,0 +1,32 @@
+.file-action-dialog {
+  width: min(440px, calc(100vw - 32px));
+  overflow: auto;
+}
+.file-action-content {
+  padding: 24px;
+  font-size: 13px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.file-action-content label {
+  display: grid;
+  gap: 10px;
+}
+.file-action-content input {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #d2ccd9;
+  border-radius: 6px;
+  color: inherit;
+  background: #fff;
+}
+.file-action-content input:focus-visible {
+  outline: 2px solid #ae8cc5;
+  outline-offset: 2px;
+}
+.file-action-content small {
+  color: #9b8da5;
+}
+.file-action-content [role='alert'] {
+  color: #a54456;
+}

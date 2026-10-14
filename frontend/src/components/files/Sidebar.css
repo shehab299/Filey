@@ -1,0 +1,162 @@
+.sidebar {
+  width: 208px;
+  flex-shrink: 0;
+  border-right: 1px solid #eae7ef;
+  background: #f6f4f8;
+  padding: 29px 13px 0;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+}
+.sidebar-heading {
+  padding: 0 17px;
+  color: #68527e;
+  font-size: 29px;
+  font-weight: 750;
+  letter-spacing: -1.8px;
+}
+.sidebar-heading > span {
+  display: block;
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0.1px;
+  color: #9990a2;
+  margin-top: 4px;
+}
+.sidebar-section-label {
+  padding: 0 17px;
+  margin: 32px 0 13px;
+  font-size: 8px;
+  letter-spacing: 1.7px;
+  color: #a099ab;
+  font-weight: 650;
+}
+.sidebar nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.sidebar-link {
+  display: flex;
+  align-items: center;
+  text-align: left;
+  padding: 11px 15px;
+  border-radius: 6px;
+  gap: 12px;
+  color: #7d7389;
+  font-size: 11px;
+  width: 100%;
+}
+.sidebar-link svg {
+  color: #a198ae;
+  flex-shrink: 0;
+  stroke-width: 1.6;
+}
+.sidebar-link:hover {
+  background: #ede8f2;
+}
+.sidebar-link.active {
+  background: #e9e1f0;
+  color: #795991;
+  font-weight: 600;
+}
+.sidebar-link.active svg {
+  color: #9475ae;
+}
+.active-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #a285b7;
+  margin-left: auto;
+}
+.sidebar-count {
+  margin-left: auto;
+  font-size: 9px;
+  color: #a196ab;
+}
+.folders-label {
+  margin-top: 29px;
+}
+.sidebar-folder-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.folder-chevron {
+  margin-left: auto;
+  opacity: 0.5;
+}
+.sidebar-bottom {
+  border-top: 1px solid #e9e4ee;
+  margin: auto -13px 0;
+  padding: 20px 19px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.drive-icon {
+  color: #a298b0;
+}
+.sidebar-bottom strong {
+  display: block;
+  font-size: 10px;
+  color: #7d7388;
+  font-weight: 500;
+}
+.sidebar-bottom div > span {
+  display: block;
+  font-size: 8px;
+  color: #ada5b4;
+  margin-top: 4px;
+}
+.drive-dot {
+  height: 5px;
+  width: 5px;
+  background: #8fb39c;
+  margin-left: auto;
+  border-radius: 50%;
+}
+.drive-dot.offline {
+  background: #cd9595;
+}
+@media (max-width: 850px) {
+  .sidebar {
+    width: 175px;
+  }
+  .sidebar-bottom {
+    padding: 16px 13px;
+    gap: 7px;
+  }
+  .sidebar-link {
+    padding: 11px 10px;
+  }
+}
+@media (max-width: 550px) {
+  .sidebar {
+    width: 58px;
+    padding: 18px 6px 0;
+  }
+  .sidebar-heading,
+  .sidebar-section-label,
+  .sidebar-link > span,
+  .sidebar-bottom,
+  .sidebar-link .folder-chevron {
+    display: none;
+  }
+  .sidebar-link {
+    font-size: 0;
+    padding: 12px;
+    gap: 0;
+  }
+  .sidebar nav {
+    margin-bottom: 18px;
+  }
+  .sidebar-link svg {
+    width: 20px;
+    height: 20px;
+  }
+  .sidebar-link {
+    justify-content: center;
+  }
+}

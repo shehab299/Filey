@@ -1,0 +1,111 @@
+.file-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 78px;
+  height: 72px;
+  flex-shrink: 0;
+  --file-color: #9290bd;
+}
+.folder-art {
+  position: relative;
+  isolation: isolate;
+  width: 66px;
+  height: 46px;
+  margin-top: 8px;
+  border-radius: 5px 6px 7px 7px;
+  background: linear-gradient(145deg, #e8bf86, #d9a867);
+  box-shadow:
+    inset 0 1px 0 #f6d6a6,
+    0 3px 4px #50391313;
+}
+.folder-art::before {
+  content: '';
+  position: absolute;
+  top: -8px;
+  left: 0;
+  width: 29px;
+  height: 12px;
+  border-radius: 5px 7px 0 0;
+  background: #c79657;
+  z-index: -1;
+}
+.folder-art::after {
+  content: '';
+  position: absolute;
+  top: 5px;
+  left: 4px;
+  right: 4px;
+  height: 1px;
+  background: #f6d6a67a;
+}
+.document-art {
+  width: 47px;
+  height: 60px;
+  border: 1px solid color-mix(in srgb, var(--file-color) 35%, white);
+  background: linear-gradient(145deg, #fff, color-mix(in srgb, var(--file-color) 12%, white));
+  color: var(--file-color);
+  border-radius: 5px 12px 5px 5px;
+  box-shadow: 0 3px 5px #30304709;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+.document-art svg {
+  width: 23px;
+  height: 23px;
+  stroke-width: 1.5;
+}
+.document-art > span {
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+}
+.file-icon--image {
+  --file-color: #77a895;
+}
+.file-icon--video {
+  --file-color: #a08abb;
+}
+.file-icon--audio {
+  --file-color: #ce8b9f;
+}
+.file-icon--archive {
+  --file-color: #ac9677;
+}
+.file-icon--code {
+  --file-color: #739ba8;
+}
+.file-icon--pdf {
+  --file-color: #cf827b;
+}
+.file-icon--small {
+  width: 34px;
+  height: 36px;
+}
+.file-icon--small .folder-art {
+  width: 27px;
+  height: 20px;
+  border-radius: 3px;
+  margin-top: 4px;
+}
+.file-icon--small .folder-art::before {
+  width: 13px;
+  height: 6px;
+  top: -4px;
+  border-radius: 3px;
+}
+.file-icon--small .document-art {
+  width: 24px;
+  height: 30px;
+  border-radius: 3px;
+}
+.file-icon--small .document-art svg {
+  width: 15px;
+  height: 15px;
+}
+.file-icon--small .document-art > span {
+  display: none;
+}

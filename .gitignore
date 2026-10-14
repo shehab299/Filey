@@ -1,1 +1,8 @@
 /target
+/frontend/node_modules/
+/frontend/dist/
+/frontend/*.tsbuildinfo
+/assets/
+.env
+.env.*
+!.env.example

@@ -1,0 +1,104 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;450;500;550;600;650;700;750&display=swap');
+
+:root {
+  font-family: 'DM Sans', sans-serif;
+  color: #675672;
+  background: #d2ccd9;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+}
+button,
+input,
+select {
+  font: inherit;
+}
+button {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+}
+button:disabled {
+  cursor: default;
+  opacity: 0.35;
+}
+button:focus-visible,
+a:focus-visible,
+select:focus-visible {
+  outline: 2px solid #ae8cc5;
+  outline-offset: 3px;
+}
+::selection {
+  background: #dfd0ea;
+  color: #65516e;
+}
+.icon-button {
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border-radius: 5px;
+  display: grid;
+  place-items: center;
+  color: #aa9ab7;
+}
+.icon-button:hover:not(:disabled) {
+  background: #f0e9f6;
+  color: #89649f;
+}
+.eyebrow {
+  font-size: 8px;
+  letter-spacing: 1.5px;
+  font-weight: 500;
+  color: #b3a3be;
+}
+.primary-button {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 15px;
+  border-radius: 6px;
+  background: #9d7eb2;
+  color: white;
+  font-size: 11px;
+}
+.primary-button:hover:not(:disabled) {
+  background: #8b6c9f;
+}
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: #33273e55;
+  backdrop-filter: blur(5px);
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.spinning {
+  animation: spin 1.5s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}
